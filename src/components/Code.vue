@@ -1,5 +1,5 @@
 <template>
-  <pre ref="code" class="code-container language-js"><transition-group name="list-complete" tag="div"><code class="list-item" v-for="change in html" :key="change.id" v-html="change.value + '\n'"/></transition-group></pre>
+  <pre ref="code" class="code-container language-js"><transition-group name="list" tag="div"><code class="list-item" v-for="change in html" :key="change.id" v-html="change.value + '\n'"/></transition-group></pre>
 </template>
 
 <script>
@@ -17,7 +17,8 @@ export default {
 
   data() {
     return {
-      html: ""
+      html: "",
+      sequence: []
     };
   },
 
@@ -81,23 +82,29 @@ export default {
           id: index
         }));
 
-      this.updateHtml(old);
+      this.sequence.push(old, from, to, from, old);
+    },
 
-      setTimeout(() => {
-        this.updateHtml(from);
-
-        setTimeout(() => {
-          this.updateHtml(to);
-
-          setTimeout(() => {
-            this.updateHtml(old);
-          }, 1000);
-        }, 1000);
-      }, 1000);
+    sequence() {
+      if (this.executingSequence) return;
+      this.executingSequence = true;
+      this.processSequence();
     }
   },
 
   methods: {
+    processSequence() {
+      if (this.sequence.length === 0) {
+        this.executingSequence = false;
+        return;
+      }
+
+      const html = this.sequence.shift();
+      this.updateHtml(html);
+
+      setTimeout(this.processSequence, 1000);
+    },
+
     updateHtml(html) {
       const el = this.$refs.code;
 
@@ -139,16 +146,19 @@ export default {
   display: block;
   transition: opacity 0.7s ease-in-out;
 }
-.list-complete-enter, .list-complete-leave-to
-/* .list-complete-leave-active below version 2.1.8 */ {
+
+.list-enter, .list-leave-to
+/* .list-leave-active below version 2.1.8 */ {
   opacity: 0;
   transform: translateX(30px);
 }
-.list-complete-move {
+
+.list-move {
   opacity: 1;
   transition: transform 0.7s ease-in-out;
 }
-.list-complete-leave-active {
+
+.list-leave-active {
   display: none;
 }
 </style>
