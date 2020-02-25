@@ -1,10 +1,12 @@
 <template>
-  <pre ref="code" class="language-js"><transition-group name="list-complete" mode="out-in" tag="div"><code class="list-item" v-for="change in html" :key="change.id" v-html="change.value + '\n'"/></transition-group></pre>
+  <pre ref="code" class="code-container language-js"><transition-group name="list-complete" tag="div"><code class="list-item" v-for="change in html" :key="change.id" v-html="change.value + '\n'"/></transition-group></pre>
 </template>
 
 <script>
 import Prism from "prismjs";
 import { diffLines } from "diff";
+
+const stripPx = str => Number.parseInt(str.substr(0, str.length - 2));
 
 export default {
   props: {
@@ -19,14 +21,15 @@ export default {
     };
   },
 
-  computed: {
-    // html() {
-    //   return Prism.highlight(
-    //     this.code,
-    //     Prism.languages.javascript,
-    //     "javascript"
-    //   );
-    // }
+  mount() {
+    this.$refs.code.addEventListener("transitionend", this.handleTransitionEnd);
+  },
+
+  beforeDestroy() {
+    this.$refs.code.removeEventListener(
+      "transitionend",
+      this.handleTransitionEnd
+    );
   },
 
   watch: {
@@ -79,11 +82,16 @@ export default {
         }));
 
       this.updateHtml(old);
+
       setTimeout(() => {
         this.updateHtml(from);
 
         setTimeout(() => {
           this.updateHtml(to);
+
+          setTimeout(() => {
+            this.updateHtml(old);
+          }, 1000);
         }, 1000);
       }, 1000);
     }
@@ -91,16 +99,45 @@ export default {
 
   methods: {
     updateHtml(html) {
-      this.html = html;
+      const el = this.$refs.code;
+
+      const { transition } = el.style;
+      el.style.transition = "";
+
+      // Wait until the CSS properties have updated
+      requestAnimationFrame(() => {
+        el.style.height = `${el.scrollHeight}px`;
+        el.style.transition = transition;
+
+        this.html = html;
+
+        this.$nextTick(() => {
+          const { paddingTop, paddingBottom } = getComputedStyle(el);
+          const childHeight = el.firstChild.clientHeight;
+          const height =
+            stripPx(paddingTop) + childHeight + stripPx(paddingBottom);
+
+          el.style.height = `${height}px`;
+        });
+      });
+    },
+
+    handleTransitionEnd() {
+      this.$refs.code.style.height = undefined;
     }
   }
 };
 </script>
 
 <style>
+.code-container {
+  transition: height 0.7s ease-in-out;
+  box-sizing: border-box;
+}
+
 .list-item {
   display: block;
-  transition: all 0.7s ease-in-out;
+  transition: opacity 0.7s ease-in-out;
 }
 .list-complete-enter, .list-complete-leave-to
 /* .list-complete-leave-active below version 2.1.8 */ {
