@@ -1,5 +1,5 @@
 <template>
-  <pre ref="code" class="code-container language-js"><transition-group name="list" tag="div"><code
+  <pre ref="code" class="code-container language-js"><transition-group class="transition-container" name="list" tag="div"><code
   :ref="change.id"
   class="list-item"
   v-for="change in html"
@@ -42,53 +42,77 @@ export default {
   watch: {
     code(newVal, oldVal) {
       const diff = diffLines(oldVal, newVal);
-      const html = Prism.highlight(
+
+      const toHtml = Prism.highlight(
         newVal,
         Prism.languages.javascript,
         "javascript"
       ).split("\n");
+      const fromHtml = Prism.highlight(
+        oldVal,
+        Prism.languages.javascript,
+        "javascript"
+      ).split("\n");
 
+      let toLine = 0;
+      let fromLine = 0;
       for (let change of diff) {
-        change.html = html.splice(0, change.count);
+        if (change.added) {
+          change.html = toHtml.slice(toLine, toLine + change.count);
+          toLine += change.count;
+        } else if (change.removed) {
+          change.html = fromHtml.slice(fromLine, fromLine + change.count);
+          fromLine += change.count;
+        } else {
+          change.html = toHtml.slice(toLine, toLine + change.count);
+          toLine += change.count;
+          fromLine += change.count;
+        }
       }
 
       const old = diff
         .reduce((prev, next) => {
-          if (!next.added) {
-            return prev.concat(next.html);
-          } else {
+          if (next.added) {
             return prev.concat(new Array(next.count).fill(""));
+          } else {
+            return prev.concat(next.html);
           }
         }, [])
         .map((value, index) => ({
           value,
-          id: index
+          id: index + ""
         }))
         .filter(({ value }) => value !== "");
 
-      const from = diff
+      const transition = diff
         .reduce((prev, next) => {
-          if (!next.added) {
-            return prev.concat(next.html);
-          } else {
+          if (next.added || next.removed) {
             return prev.concat(new Array(next.count).fill(""));
+          } else {
+            return prev.concat(next.html);
           }
         }, [])
         .map((value, index) => ({
           value,
-          id: value === "" ? `${index}-change` : index
+          id: value === "" ? `${index}-change` : index + ""
         }));
 
       const to = diff
         .reduce((prev, next) => {
-          return prev.concat(next.html);
+          if (next.removed) {
+            return prev.concat(new Array(next.count).fill(""));
+          } else {
+            return prev.concat(next.html);
+          }
         }, [])
         .map((value, index) => ({
           value,
-          id: index
-        }));
+          id: index + ""
+        }))
+        .filter(({ value }) => value !== "");
 
-      this.sequence.push(old, from, to);
+      this.sequence.push(old, transition, to);
+      console.log(JSON.stringify(this.sequence, null, 2));
     },
 
     sequence() {
@@ -118,43 +142,44 @@ export default {
 
       // First transition out existing HTML
       this.transitionIds = this.html
-        .filter(change => !html.find(({ id }) => change.id === id))
+        .filter(change => change.id.includes("change"))
         .map(change => change.id);
 
       if (this.transitionIds.length > 0) {
         this.addClass("transition-leave-from");
       }
 
-      requestAnimationFrame(() => {
-        if (this.transitionIds.length > 0) {
-          this.removeClass("transition-leave-from");
-          this.addClass("transition-leave-to");
+      requestAnimationFrame(this.setupTransition.bind(this, html, transition));
+    },
 
-          const transEl = this.$refs[this.transitionIds[0]][0];
-          let setupTransitionEnd = false;
+    setupTransition(html, transition) {
+      if (this.transitionIds.length > 0) {
+        this.removeClass("transition-leave-from");
+        this.addClass("transition-leave-to");
 
-          transEl.addEventListener("transitionstart", () => {
-            transEl.addEventListener(
-              "transitionend",
-              this.handleCodeTransitionEnd.bind(this, html, transition)
-            );
-            setupTransitionEnd = true;
-          });
+        const transEl = this.$refs[this.transitionIds[0]][0];
+        let setupTransitionEnd = false;
 
-          requestAnimationFrame(() => {
-            // No CSS transition is being run, so just keep going
-            if (!setupTransitionEnd) {
-              this.transitionTo(html, transition);
-            }
-          });
-        } else {
-          this.transitionTo(html, transition);
-        }
-      });
+        transEl.addEventListener("transitionstart", () => {
+          transEl.addEventListener(
+            "transitionend",
+            this.handleCodeTransitionEnd.bind(this, html, transition)
+          );
+          setupTransitionEnd = true;
+        });
+
+        requestAnimationFrame(() => {
+          // No CSS transition is being run, so just keep going
+          if (!setupTransitionEnd) {
+            this.transitionTo(html, transition);
+          }
+        });
+      } else {
+        this.transitionTo(html, transition);
+      }
     },
 
     handleCodeTransitionEnd(html, transition) {
-      console.log("transition end");
       this.removeClass("transition-leave-to");
 
       const el = this.$refs[this.transitionIds[0]][0];
@@ -231,27 +256,32 @@ export default {
 </script>
 
 <style>
+.transition-container {
+  overflow: hidden;
+}
+
 .code-container {
-  transition: height 1s ease-in-out;
+  transition: height 0.5s ease-in-out;
   box-sizing: border-box;
 }
 
 .list-item {
   display: block;
 }
-
+/* 
 .list-enter-active,
 .list-leave-active {
-  transition: all 1s ease-in-out;
+  transition: all 0.5s ease-in-out;
 }
 
 .list-enter,
 .list-leave-to {
   opacity: 0;
+  transform: translateX(30px);
 }
 
 .list-move {
-  transition: all 1s ease-in-out;
+  transition: all 0.5s ease-in-out;
 }
 
 .list-leave-active {
@@ -259,7 +289,7 @@ export default {
 
 .transition-leave-to,
 .transition-leave-from {
-  transition: background-color 1s ease-in-out;
+  transition: all 0.5s ease-in-out;
 }
 
 .transition-leave-from {
@@ -267,5 +297,5 @@ export default {
 }
 
 .transition-leave-to {
-}
+} */
 </style>

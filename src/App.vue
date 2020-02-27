@@ -16,7 +16,7 @@ export default {
   },
   data() {
     return {
-      toggle: true,
+      toggle: false,
       before: `export default () => {
   return 'this is cool' + 3;
 };`,
