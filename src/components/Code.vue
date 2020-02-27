@@ -126,14 +126,27 @@ export default {
       }
 
       requestAnimationFrame(() => {
-        if (this.$refs.change && this.transitionIds.length > 0) {
+        if (this.transitionIds.length > 0) {
           this.removeClass("transition-leave-from");
           this.addClass("transition-leave-to");
 
-          this.$refs.change[this.transitionIds[0]].addEventListener(
-            "transitionend",
-            this.handleCodeTransitionEnd.bind(this, html, transition)
-          );
+          const transEl = this.$refs[this.transitionIds[0]][0];
+          let setupTransitionEnd = false;
+
+          transEl.addEventListener("transitionstart", () => {
+            transEl.addEventListener(
+              "transitionend",
+              this.handleCodeTransitionEnd.bind(this, html, transition)
+            );
+            setupTransitionEnd = true;
+          });
+
+          requestAnimationFrame(() => {
+            // No CSS transition is being run, so just keep going
+            if (!setupTransitionEnd) {
+              this.transitionTo(html, transition);
+            }
+          });
         } else {
           this.transitionTo(html, transition);
         }
@@ -141,17 +154,13 @@ export default {
     },
 
     handleCodeTransitionEnd(html, transition) {
+      console.log("transition end");
       this.removeClass("transition-leave-to");
-      this.addClass("transition-leave-end");
 
-      requestAnimationFrame(() => {
-        this.removeClass("transition-leave-end");
-      });
-
-      this.$refs[this.transitionIds[0][0]].removeEventListener(
-        "transitionend",
-        this.handleCodeTransitionEnd
-      );
+      const el = this.$refs[this.transitionIds[0]][0];
+      if (el) {
+        el.removeEventListener("transitionend", this.handleCodeTransitionEnd);
+      }
 
       this.transitionTo(html, transition);
     },
@@ -166,7 +175,17 @@ export default {
 
         this.html = html;
 
+        this.removeTransitionLines();
+
         this.$nextTick(() => {
+          if (this.transitionIds.length > 0) {
+            // Remove .list-move class from all to prevent
+            // unnecessary movement while new lines are transitioned in
+            this.$el.querySelectorAll(".list-move").forEach(moveEl => {
+              moveEl.classList.remove("list-move");
+            });
+          }
+
           const { paddingTop, paddingBottom } = getComputedStyle(el);
           const childHeight = el.firstChild.clientHeight;
           const height =
@@ -177,19 +196,34 @@ export default {
       });
     },
 
+    removeTransitionLines() {
+      this.transitionIds.forEach(id => {
+        const el = this.$refs[id][0];
+        if (el) {
+          el.remove();
+        }
+      });
+    },
+
     handleTransitionEnd() {
       this.$refs.code.style.height = undefined;
     },
 
     addClass(className) {
       this.transitionIds.forEach(id => {
-        this.$refs[id][0].classList.add(className);
+        const el = this.$refs[id][0];
+        if (el) {
+          el.classList.add(className);
+        }
       });
     },
 
     removeClass(className) {
       this.transitionIds.forEach(id => {
-        this.$refs[id][0].classList.remove(className);
+        const el = this.$refs[id][0];
+        if (el) {
+          el.classList.remove(className);
+        }
       });
     }
   }
@@ -204,37 +238,34 @@ export default {
 
 .list-item {
   display: block;
+}
+
+.list-enter-active,
+.list-leave-active {
   transition: all 1s ease-in-out;
 }
 
-/* .list-enter, .list-leave-to */
-/* .list-leave-active below version 2.1.8 { */
-/* opacity: 0;
-  transform: translateX(30px);
-} */
+.list-enter,
+.list-leave-to {
+  opacity: 0;
+}
 
 .list-move {
-  opacity: 1;
-  transition: transform 1s ease-in-out;
+  transition: all 1s ease-in-out;
 }
 
 .list-leave-active {
-  /* display: none; */
 }
 
 .transition-leave-to,
 .transition-leave-from {
+  transition: background-color 1s ease-in-out;
 }
 
 .transition-leave-from {
-  background: red;
+  background-color: red;
 }
 
 .transition-leave-to {
-  background: green;
-}
-
-.transition-leave-end {
-  /* display: none; */
 }
 </style>
