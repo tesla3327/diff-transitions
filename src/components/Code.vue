@@ -134,57 +134,50 @@ export default {
       );
 
       this.setupFlip(unchanged);
-      await this.leave(removed);
+      await this.transition(removed);
 
       this.html = newHtml;
 
       await this.$nextTick();
 
       this.executeFlip();
-      this.enter(added);
+      this.transition(added, true);
     },
 
     animateContainer() {},
 
-    leave(removed) {
-      // Transition out the removed lines
-      const promises = removed.map(change => {
+    transition(changes, reverse = false) {
+      const promises = changes.map((change, index) => {
         const el = this.$refs[change.id][0];
 
         if (change.value === "") {
           return Promise.resolve();
         }
 
-        return tween({
-          from: { opacity: 1 },
-          to: { opacity: 0 },
-          duration: 500,
-          easing: "easeOutQuad",
-          step: state => {
-            el.style.opacity = state.opacity + "";
-          }
-        });
-      });
+        let from = {
+          opacity: 1,
+          left: 0
+        };
+        let to = {
+          opacity: 0,
+          left: 30
+        };
 
-      return Promise.all(promises);
-    },
-
-    enter(added) {
-      // Transition in the added lines
-      const promises = added.map(change => {
-        const el = this.$refs[change.id][0];
-
-        if (change.value === "") {
-          return Promise.resolve();
+        if (reverse) {
+          const swap = from;
+          from = to;
+          to = swap;
         }
 
         return tween({
-          from: { opacity: 0 },
-          to: { opacity: 1 },
+          from,
+          to,
           duration: 500,
+          delay: index * 30,
           easing: "easeOutQuad",
           step: state => {
             el.style.opacity = state.opacity + "";
+            el.style.transform = `translateX(${state.left}px)`;
           }
         });
       });
@@ -295,8 +288,8 @@ export default {
 }
 
 .code-container {
-  transition: height 1s ease-in-out;
   box-sizing: border-box;
+  overflow: hidden !important;
 }
 
 .list-item {
