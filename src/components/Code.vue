@@ -1,11 +1,11 @@
 <template>
-  <pre ref="code" class="code-container language-js"><transition-group class="transition-container" name="list" tag="div"><code
+  <pre ref="code" class="code-container language-js"><div><code
   :ref="change.id"
   class="list-item"
   v-for="change in html"
   :key="change.id"
   v-html="change.value + '\n'"
-/></transition-group></pre>
+/></div></pre>
 </template>
 
 <script>
@@ -24,19 +24,9 @@ export default {
   data() {
     return {
       html: [],
-      sequence: []
+      sequence: [],
+      additive: false
     };
-  },
-
-  mount() {
-    this.$refs.code.addEventListener("transitionend", this.handleTransitionEnd);
-  },
-
-  beforeDestroy() {
-    this.$refs.code.removeEventListener(
-      "transitionend",
-      this.handleTransitionEnd
-    );
   },
 
   watch: {
@@ -54,6 +44,8 @@ export default {
         "javascript"
       ).split("\n");
 
+      this.additive = toHtml.length > fromHtml.length;
+
       let toLine = 0;
       let fromLine = 0;
       for (let change of diff) {
@@ -70,7 +62,7 @@ export default {
         }
       }
 
-      const old = diff
+      const from = diff
         .reduce((prev, next) => {
           if (next.added) {
             return prev.concat(new Array(next.count).fill(""));
@@ -111,8 +103,7 @@ export default {
         }))
         .filter(({ value }) => value !== "");
 
-      this.sequence.push(old, transition, to);
-      console.log(JSON.stringify(this.sequence, null, 2));
+      this.sequence = [from, transition, to];
     },
 
     sequence() {
@@ -130,126 +121,95 @@ export default {
       }
 
       const html = this.sequence.shift();
-      this.updateHtml(html);
+      this.performTransition(html);
 
-      setTimeout(this.processSequence, 1000);
+      setTimeout(this.processSequence, 2000);
     },
 
-    updateHtml(html) {
-      const el = this.$refs.code;
-      const { transition } = el.style;
-      el.style.transition = "";
+    performTransition(newHtml) {
+      const { added, removed, unchanged } = this.correlateIds(
+        this.html,
+        newHtml
+      );
 
-      // First transition out existing HTML
-      this.transitionIds = this.html
-        .filter(change => change.id.includes("change"))
-        .map(change => change.id);
+      this.flip(unchanged, newHtml);
 
-      if (this.transitionIds.length > 0) {
-        this.addClass("transition-leave-from");
-      }
-
-      requestAnimationFrame(this.setupTransition.bind(this, html, transition));
+      this.html = newHtml;
     },
 
-    setupTransition(html, transition) {
-      if (this.transitionIds.length > 0) {
-        this.removeClass("transition-leave-from");
-        this.addClass("transition-leave-to");
+    flip(changes, newHtml) {
+      const el = changes.map(change => this.$refs[change.id][0]);
+      const fromPos = el.map(el => el.getBoundingClientRect());
 
-        const transEl = this.$refs[this.transitionIds[0]][0];
-        let setupTransitionEnd = false;
+      el.forEach(el => {
+        el.style.transform = "";
+        el.classList.remove("list-move");
+      });
 
-        transEl.addEventListener("transitionstart", () => {
-          transEl.addEventListener(
-            "transitionend",
-            this.handleCodeTransitionEnd.bind(this, html, transition)
-          );
-          setupTransitionEnd = true;
-        });
+      this.$nextTick(() => {
+        // Calculate offsets
+        const toPos = el.map(el => el.getBoundingClientRect());
+        const offset = fromPos.reduce((prev, next, index) => {
+          prev.push({
+            left: next.left - toPos[index].left,
+            top: next.top - toPos[index].top
+          });
+          return prev;
+        }, []);
 
         requestAnimationFrame(() => {
-          // No CSS transition is being run, so just keep going
-          if (!setupTransitionEnd) {
-            this.transitionTo(html, transition);
-          }
-        });
-      } else {
-        this.transitionTo(html, transition);
-      }
-    },
+          // Set transform to offset and add class to setup transition
+          el.forEach((el, index) => {
+            const { left, top } = offset[index];
+            el.style.transform = `translate(${left}px, ${top}px)`;
+          });
 
-    handleCodeTransitionEnd(html, transition) {
-      this.removeClass("transition-leave-to");
+          // Wait until the next frame to zero out the transform
+          requestAnimationFrame(() => {
+            el.forEach(el => {
+              el.classList.add("list-move");
+              el.style.transform = "translate(0,0)";
 
-      const el = this.$refs[this.transitionIds[0]][0];
-      if (el) {
-        el.removeEventListener("transitionend", this.handleCodeTransitionEnd);
-      }
-
-      this.transitionTo(html, transition);
-    },
-
-    transitionTo(html, transition) {
-      const el = this.$refs.code;
-
-      // Wait until the CSS properties have updated
-      requestAnimationFrame(() => {
-        el.style.height = `${el.scrollHeight}px`;
-        el.style.transition = transition;
-
-        this.html = html;
-
-        this.removeTransitionLines();
-
-        this.$nextTick(() => {
-          if (this.transitionIds.length > 0) {
-            // Remove .list-move class from all to prevent
-            // unnecessary movement while new lines are transitioned in
-            this.$el.querySelectorAll(".list-move").forEach(moveEl => {
-              moveEl.classList.remove("list-move");
+              const cleanup = () => {
+                el.classList.remove("list-move");
+                el.style.transform = undefined;
+                el.removeEventListener("transitionend", cleanup);
+              };
+              el.addEventListener("transitionend", cleanup);
             });
-          }
-
-          const { paddingTop, paddingBottom } = getComputedStyle(el);
-          const childHeight = el.firstChild.clientHeight;
-          const height =
-            stripPx(paddingTop) + childHeight + stripPx(paddingBottom);
-
-          el.style.height = `${height}px`;
+          });
         });
       });
     },
 
-    removeTransitionLines() {
-      this.transitionIds.forEach(id => {
-        const el = this.$refs[id][0];
-        if (el) {
-          el.remove();
-        }
-      });
-    },
+    correlateIds(from, to) {
+      const added = [];
+      const removed = [];
+      const unchanged = [];
 
-    handleTransitionEnd() {
-      this.$refs.code.style.height = undefined;
-    },
+      for (const change of from) {
+        const found = to.some(({ id }) => id === change.id);
 
-    addClass(className) {
-      this.transitionIds.forEach(id => {
-        const el = this.$refs[id][0];
-        if (el) {
-          el.classList.add(className);
+        if (found) {
+          unchanged.push(change);
+        } else {
+          removed.push(change);
         }
-      });
-    },
+      }
 
-    removeClass(className) {
-      this.transitionIds.forEach(id => {
-        const el = this.$refs[id][0];
-        if (el) {
-          el.classList.remove(className);
+      for (const change of to) {
+        const found = from.some(({ id }) => id === change.id);
+
+        if (!found) {
+          added.push(change);
         }
-      });
+      }
+
+      return {
+        added,
+        removed,
+        unchanged
+      };
     }
   }
 };
@@ -261,17 +221,17 @@ export default {
 }
 
 .code-container {
-  transition: height 0.5s ease-in-out;
+  transition: height 1s ease-in-out;
   box-sizing: border-box;
 }
 
 .list-item {
   display: block;
 }
-/* 
+
 .list-enter-active,
 .list-leave-active {
-  transition: all 0.5s ease-in-out;
+  transition: all 1s ease-in-out;
 }
 
 .list-enter,
@@ -281,7 +241,7 @@ export default {
 }
 
 .list-move {
-  transition: all 0.5s ease-in-out;
+  transition: all 1s ease-in-out;
 }
 
 .list-leave-active {
@@ -289,7 +249,7 @@ export default {
 
 .transition-leave-to,
 .transition-leave-from {
-  transition: all 0.5s ease-in-out;
+  transition: all 1s ease-in-out;
 }
 
 .transition-leave-from {
@@ -297,5 +257,5 @@ export default {
 }
 
 .transition-leave-to {
-} */
+}
 </style>
