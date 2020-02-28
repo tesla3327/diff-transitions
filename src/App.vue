@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <button @click="toggle = !toggle">Toggle</button>
-    <Code :code="toggle ? before : after"/>
+    <Code :code="currentCode"/>
   </div>
 </template>
 
@@ -17,6 +17,8 @@ export default {
   data() {
     return {
       toggle: false,
+      beforeLines: [1],
+      afterLines: [2, 3, 4],
       before: `export default () => {
   return 'this is cool' + 3;
 };`,
@@ -28,6 +30,14 @@ export default {
   return 'this is cool' + 3;
 };`
     };
+  },
+
+  computed: {
+    currentCode() {
+      return this.toggle
+        ? { code: this.before, highlightLines: this.beforeLines }
+        : { code: this.after, highlightLines: this.afterLines };
+    }
   }
 };
 </script>

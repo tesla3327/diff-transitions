@@ -1,8 +1,13 @@
 <template>
-  <pre ref="container" class="code-container language-js"><div><code
+  <pre
+    ref="container"
+    class="code-container language-js"
+    :class="highlightLines.length > 0 && 'highlighting'"
+  ><div><code
+  v-for="(change, index) in html"
   :ref="change.id"
   class="list-item"
-  v-for="change in html"
+  :class="highlightLines.includes(index) && 'highlight'"
   :key="change.id"
   v-html="change.value + '\n'"
 /></div></pre>
@@ -18,13 +23,14 @@ const stripPx = str => Number.parseInt(str.substr(0, str.length - 2));
 export default {
   props: {
     code: {
-      type: String
+      type: Object
     }
   },
 
   data() {
     return {
       html: [],
+      highlightLines: [],
       sequence: [],
       additive: false
     };
@@ -32,15 +38,15 @@ export default {
 
   watch: {
     code(newVal, oldVal) {
-      const diff = diffLines(oldVal, newVal);
+      const diff = diffLines(oldVal.code, newVal.code);
 
       const toHtml = Prism.highlight(
-        newVal,
+        newVal.code,
         Prism.languages.javascript,
         "javascript"
       ).split("\n");
       const fromHtml = Prism.highlight(
-        oldVal,
+        oldVal.code,
         Prism.languages.javascript,
         "javascript"
       ).split("\n");
@@ -104,7 +110,11 @@ export default {
         }))
         .filter(({ value }) => value !== "");
 
-      this.sequence = [from, transition, to];
+      this.sequence = [
+        { code: from, highlight: oldVal.highlightLines },
+        { code: transition, highlight: newVal.highlightLines },
+        { code: to, highlight: newVal.highlightLines }
+      ];
     },
 
     sequence() {
@@ -121,22 +131,21 @@ export default {
         return;
       }
 
-      const html = this.sequence.shift();
-      this.performTransition(html);
+      const state = this.sequence.shift();
+      this.performTransition(state);
 
-      setTimeout(this.processSequence, 1000);
+      setTimeout(this.processSequence, 500);
     },
 
-    async performTransition(newHtml) {
-      const { added, removed, unchanged } = this.correlateIds(
-        this.html,
-        newHtml
-      );
+    async performTransition(state) {
+      const { code, highlight } = state;
+      const { added, removed, unchanged } = this.correlateIds(this.html, code);
 
       this.setupFlip(unchanged);
       await this.transition(removed);
 
-      this.html = newHtml;
+      this.html = code;
+      this.highlightLines = highlight;
 
       await this.$nextTick();
 
@@ -160,7 +169,7 @@ export default {
         };
         let to = {
           opacity: 0,
-          left: 30
+          left: 600
         };
 
         if (reverse) {
@@ -172,13 +181,16 @@ export default {
         return tween({
           from,
           to,
-          duration: 500,
+          duration: 300,
           delay: index * 30,
           easing: "easeOutQuad",
           step: state => {
-            el.style.opacity = state.opacity + "";
+            // el.style.opacity = state.opacity + "";
             el.style.transform = `translateX(${state.left}px)`;
           }
+        }).then(() => {
+          el.style.opacity = "";
+          el.style.transform = undefined;
         });
       });
 
@@ -287,7 +299,16 @@ export default {
   overflow: hidden;
 }
 
+.list-item {
+  transition: opacity 0.5s ease-in-out;
+}
+
+.highlighting .list-item:not(.highlight) {
+  opacity: 0.5;
+}
+
 .code-container {
+  max-width: 600px;
   box-sizing: border-box;
   overflow: hidden !important;
 }
