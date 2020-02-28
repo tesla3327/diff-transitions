@@ -1,5 +1,5 @@
 <template>
-  <pre ref="code" class="code-container language-js"><div><code
+  <pre ref="container" class="code-container language-js"><div><code
   :ref="change.id"
   class="list-item"
   v-for="change in html"
@@ -11,6 +11,7 @@
 <script>
 import Prism from "prismjs";
 import { diffLines } from "diff";
+import { tween } from "shifty";
 
 const stripPx = str => Number.parseInt(str.substr(0, str.length - 2));
 
@@ -123,21 +124,75 @@ export default {
       const html = this.sequence.shift();
       this.performTransition(html);
 
-      setTimeout(this.processSequence, 2000);
+      setTimeout(this.processSequence, 1000);
     },
 
-    performTransition(newHtml) {
+    async performTransition(newHtml) {
       const { added, removed, unchanged } = this.correlateIds(
         this.html,
         newHtml
       );
 
-      this.flip(unchanged, newHtml);
+      this.setupFlip(unchanged);
+      await this.leave(removed);
 
       this.html = newHtml;
+
+      await this.$nextTick();
+
+      this.executeFlip();
+      this.enter(added);
     },
 
-    flip(changes, newHtml) {
+    animateContainer() {},
+
+    leave(removed) {
+      // Transition out the removed lines
+      const promises = removed.map(change => {
+        const el = this.$refs[change.id][0];
+
+        if (change.value === "") {
+          return Promise.resolve();
+        }
+
+        return tween({
+          from: { opacity: 1 },
+          to: { opacity: 0 },
+          duration: 500,
+          easing: "easeOutQuad",
+          step: state => {
+            el.style.opacity = state.opacity + "";
+          }
+        });
+      });
+
+      return Promise.all(promises);
+    },
+
+    enter(added) {
+      // Transition in the added lines
+      const promises = added.map(change => {
+        const el = this.$refs[change.id][0];
+
+        if (change.value === "") {
+          return Promise.resolve();
+        }
+
+        return tween({
+          from: { opacity: 0 },
+          to: { opacity: 1 },
+          duration: 500,
+          easing: "easeOutQuad",
+          step: state => {
+            el.style.opacity = state.opacity + "";
+          }
+        });
+      });
+
+      return Promise.all(promises);
+    },
+
+    setupFlip(changes) {
       const el = changes.map(change => this.$refs[change.id][0]);
       const fromPos = el.map(el => el.getBoundingClientRect());
 
@@ -146,39 +201,58 @@ export default {
         el.classList.remove("list-move");
       });
 
-      this.$nextTick(() => {
-        // Calculate offsets
-        const toPos = el.map(el => el.getBoundingClientRect());
-        const offset = fromPos.reduce((prev, next, index) => {
-          prev.push({
-            left: next.left - toPos[index].left,
-            top: next.top - toPos[index].top
-          });
-          return prev;
-        }, []);
+      this.flip = {
+        el,
+        fromPos,
+        containerHeight: this.$refs.container.scrollHeight
+      };
+    },
 
-        requestAnimationFrame(() => {
-          // Set transform to offset and add class to setup transition
-          el.forEach((el, index) => {
-            const { left, top } = offset[index];
-            el.style.transform = `translate(${left}px, ${top}px)`;
-          });
+    executeFlip() {
+      const { el, fromPos } = this.flip;
 
-          // Wait until the next frame to zero out the transform
-          requestAnimationFrame(() => {
-            el.forEach(el => {
-              el.classList.add("list-move");
-              el.style.transform = "translate(0,0)";
-
-              const cleanup = () => {
-                el.classList.remove("list-move");
-                el.style.transform = undefined;
-                el.removeEventListener("transitionend", cleanup);
-              };
-              el.addEventListener("transitionend", cleanup);
-            });
-          });
+      // Calculate offsets
+      const toPos = el.map(el => el.getBoundingClientRect());
+      const offset = fromPos.reduce((prev, next, index) => {
+        prev.push({
+          left: next.left - toPos[index].left,
+          top: next.top - toPos[index].top
         });
+        return prev;
+      }, []);
+
+      offset.forEach(({ left, top }, index) => {
+        tween({
+          from: { left, top },
+          to: { left: 0, top: 0 },
+          duration: 500,
+          easing: "easeOutQuad",
+          step: state => {
+            el[index].style.transform = `translate(${state.left}px, ${
+              state.top
+            }px)`;
+          }
+        }).then(() => {
+          el[index].style.transform = undefined;
+        });
+      });
+
+      // Animate container
+      const container = this.$refs.container;
+      const { paddingTop, paddingBottom } = getComputedStyle(container);
+      const childHeight = container.firstChild.clientHeight;
+      const height = stripPx(paddingTop) + childHeight + stripPx(paddingBottom);
+
+      tween({
+        from: { height: this.flip.containerHeight },
+        to: { height },
+        duration: 500,
+        easing: "easeOutQuad",
+        step: state => {
+          container.style.height = `${state.height}px`;
+        }
+      }).then(() => {
+        container.style.height = undefined;
       });
     },
 
@@ -227,35 +301,5 @@ export default {
 
 .list-item {
   display: block;
-}
-
-.list-enter-active,
-.list-leave-active {
-  transition: all 1s ease-in-out;
-}
-
-.list-enter,
-.list-leave-to {
-  opacity: 0;
-  transform: translateX(30px);
-}
-
-.list-move {
-  transition: all 1s ease-in-out;
-}
-
-.list-leave-active {
-}
-
-.transition-leave-to,
-.transition-leave-from {
-  transition: all 1s ease-in-out;
-}
-
-.transition-leave-from {
-  background-color: red;
-}
-
-.transition-leave-to {
 }
 </style>
